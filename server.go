@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"syscall"
 
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/ed25519"
@@ -15,6 +16,16 @@ import (
 )
 
 var NotImplErr = errors.New("Not Built Yet Yo")
+
+func getCredentials(conn *net.UnixConn) (*syscall.Ucred, error) {
+	f, err := conn.File()
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	return syscall.GetsockoptUcred(int(f.Fd()), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
+}
 
 type Server struct {
 	locked   bool
@@ -42,8 +53,13 @@ func (s *Server) Run() {
 			log.Fatal("Accept error: ", err)
 		}
 
+		creds, err := getCredentials(fd.(*net.UnixConn))
+		if err != nil {
+			panic(err)
+		}
+
 		go func() {
-			log.Printf("serving agent for new connection %v", fd.RemoteAddr())
+			log.Printf("serving agent for new connection %v, %v, %v", creds.Pid, creds.Uid, creds.Gid)
 			err := agent.ServeAgent(s, fd)
 			if err != nil {
 				log.Printf("error = %v", err)
